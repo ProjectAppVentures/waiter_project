@@ -23,7 +23,7 @@ six==1.17.0
 sqlparse==0.6.0
 urllib3==2.8.0
 cffi==2.1.1
-cryptography==46.0.7
+cryptography==50.0.2
 pycparser==3.0
 
 # Conversión de fotos del catálogo.
