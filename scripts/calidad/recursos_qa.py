@@ -5,6 +5,7 @@ import http.client
 import json
 import os
 import signal
+import socket
 import stat
 import subprocess
 import time
@@ -54,6 +55,15 @@ def listening(port):
     return sockets
 
 
+def port_occupied(port):
+    if listening(port):
+        return True
+    # Un puerto publicado por Docker puede estar redirigido por NAT sin un socket en /proc/net/tcp.
+    with socket.socket() as probe:
+        probe.settimeout(0.3)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
 def owned_members(service):
     if service["host_boot"] != host_boot():
         return []
@@ -62,8 +72,9 @@ def owned_members(service):
     if not anchor:
         return []
     members = (process(int(entry.name)) for entry in PROC.iterdir() if entry.name.isdecimal())
-    return [row for row in members if row and row["uid"] == anchor["uid"] and row["group"] == anchor["group"]
-            and row["session"] == anchor["session"]]
+    own = [row for row in members if row and row["uid"] == anchor["uid"] and row["group"] == anchor["group"]
+           and row["session"] == anchor["session"]]
+    return own if process(anchor["pid"]) == anchor else []
 
 
 def service_listener(service):
@@ -90,7 +101,7 @@ def service_listener(service):
 
 
 def launch(config, component, port, command, cwd, log, env):
-    require(not listening(port), f"Puerto de {component} ocupado por otro listener.")
+    require(not port_occupied(port), f"Puerto de {component} ocupado por otro listener.")
     runtime = {"component": component, "sha": config["sha"], "checkout": config["checkout"],
                "mount_id": config["mount_id"], "boot_id": uuid4().hex}
     started = now()
@@ -204,5 +215,5 @@ def stop_service(service):
     deadline = time.monotonic() + 15
     while still_running() and time.monotonic() < deadline:
         time.sleep(0.25)
-    require(not still_running() and not listening(service["port"]),
+    require(not still_running() and not port_occupied(service["port"]),
             f"{component} sigue activo o su puerto tiene un listener ajeno.")

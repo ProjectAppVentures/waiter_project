@@ -160,9 +160,12 @@ def test_arranque_reuso_conflicto_parada_y_retoma_propios(mount):
 
     origins = mount.config["origins"]
     status, _, landing = mount.get(origins["central"], "/")
-    assert status == 200 and "Waiter es un producto de ProjectApp" in landing.decode()
+    assert status == 200
+    assert b"Waiter es un producto de ProjectApp" in landing
     status, _, login = mount.get(origins["central"], "/login")
-    assert status == 200 and "Entrar" in login.decode()
+    assert status == 200
+    # La sonda HTTP comprueba el marco de acceso antes de que el navegador hidrate el formulario.
+    assert b"Opera m" in login and b"mesas con menos carga." in login
     tenant = origins["organizations"]["wt2-ci-a"]
     status, _, org = mount.get(tenant, "/experience/api/pos/v1/org?org=wt2-ci-a")
     assert status == 200 and json.loads(org)["organization"]["slug"] == "wt2-ci-a"

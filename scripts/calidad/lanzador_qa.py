@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 sys.dont_write_bytecode = True
 from perfil_caja_cerrada import validate_passwords
-from recursos_qa import (assert_identity, await_service, http_json, launch, listening, now, stop_service,
+from recursos_qa import (assert_identity, await_service, http_json, launch, now, port_occupied, stop_service,
                          verify_service)
 from seed_perfil_qa import (MANIFEST, MOUNT_LABEL, ROOT, ProfileError, capture, docker_command, inspect_mysql,
                            mysql_container, private_json, publish, require, validate_config)
@@ -106,7 +106,7 @@ class Mount:
 
     def ensure_free(self, keys):
         for key in keys:
-            require(not listening(self.ports[key]), f"El puerto de {key} ya tiene un listener.")
+            require(not port_occupied(self.ports[key]), f"El puerto de {key} ya tiene un listener.")
 
     def check_frontend(self):
         for name in (".env", ".env.local", ".env.development", ".env.development.local"):
