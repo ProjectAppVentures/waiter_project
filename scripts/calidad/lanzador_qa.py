@@ -76,12 +76,22 @@ class Mount:
         self.container_name = f"waiter-qa-{config['mount_id']}"
         self.receipt = private_json(self.directory / RECEIPT, missing_ok=True)
         self.timings = []
+        self.record_operation = False
         if self.receipt is not None:
             require(self.receipt.get("version") == 1 and self.receipt.get("config") == config,
                     "El recibo pertenece a otra configuración o montaje.")
 
     def save(self):
         publish(self.directory / RECEIPT, self.receipt, self.directory_fd)
+
+    def execute(self, action, prepare):
+        try:
+            with self.phase("total"):
+                return self.up(prepare) if action == "up" else getattr(self, action)()
+        finally:
+            if self.record_operation:
+                self.receipt["last_operation"] = self.timings.copy()
+                self.save()
 
     @contextmanager
     def phase(self, name):
@@ -338,6 +348,7 @@ class Mount:
             self.save()
         else:
             self.new_receipt()
+        self.record_operation = True
         try:
             with self.phase("arranque_mysql"):
                 if new_profile:
@@ -358,11 +369,9 @@ class Mount:
             self.services(config, password)
             validate_config(self.config, unassigned_container=True)
         except (Exception, KeyboardInterrupt):
-            self.receipt.update(state="incompleto", last_operation=self.timings)
-            self.save()
+            self.receipt["state"] = "incompleto"
             raise
-        self.receipt.update(state="listo", last_operation=self.timings)
-        self.save()
+        self.receipt["state"] = "listo"
         return "creado" if not deferred else "reutilizado"
 
     def status(self):
@@ -379,6 +388,9 @@ class Mount:
 
     def down(self):
         require(self.receipt is not None, "El montaje aún no tiene un recibo operativo.")
+        self.receipt["state"] = "deteniendo"
+        self.save()
+        self.record_operation = True
         errors = []
         for name in ("frontend", "api"):
             try:
@@ -402,9 +414,7 @@ class Mount:
                 self.ensure_free(("mysql",))
         except ProfileError as exc:
             errors.append(str(exc))
-        self.receipt.update(state="incompleto" if errors else "detenido", stopped_at=now(),
-                            stop_issues=errors, last_operation=self.timings)
-        self.save()
+        self.receipt.update(state="incompleto" if errors else "detenido", stopped_at=now(), stop_issues=errors)
         require(not errors, "Parada incompleta. " + " ".join(errors))
         return "detenido"
 
@@ -426,8 +436,7 @@ def main():
         config["python"] = str(python)
         with locked(Path(config["state_dir"]), write=args.action != "status") as fd:
             mount = Mount(config, fd, args.config.absolute())
-            with mount.phase("total"):
-                result = mount.up(args.prepare) if args.action == "up" else getattr(mount, args.action)()
+            result = mount.execute(args.action, args.prepare)
         print(json.dumps({"result": result, "receipt": mount.receipt, "timings": mount.timings}, ensure_ascii=False))
         return 0
     except ProfileError as exc:
