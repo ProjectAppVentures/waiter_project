@@ -57,6 +57,27 @@ jobs:
           name: backend-ronda
           path: test-results/backend*.xml
 
+  perfil-qa:
+    name: QA · Perfil de caja cerrada y reuso en MySQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: experience/requirements.txt
+      - name: Dependencias del perfil
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-libmysqlclient-dev pkg-config
+          python -m pip install -r experience/requirements.txt
+      - name: Copia nueva, reuso y destinos incompatibles
+        run: python -m pytest -q -p no:django scripts/calidad/tests/test_seed_perfil_qa.py
+
   pos:
     name: Frontend · tipos, pruebas y calidad
     runs-on: ubuntu-24.04
