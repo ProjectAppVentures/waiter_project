@@ -192,6 +192,8 @@ def test_arranque_reuso_conflicto_parada_y_retoma_propios(mount):
             write_private(mount.receipt_path, altered)
             result = mount.invoke("status")
             assert result.returncode == 2 and "otro proceso" in result.stderr
+            result = mount.invoke("down")
+            assert result.returncode == 2 and "Parada incompleta" in result.stderr
             assert foreign_pid.poll() is None
         finally:
             write_private(mount.receipt_path, created)

@@ -281,6 +281,16 @@ class Mount:
                 require(payload.get("organization", {}).get("slug") == slug,
                         "El proxy no resolvió la organización del perfil.")
 
+    def registered_service(self, name):
+        service = self.receipt["services"][name]
+        runtime = service["runtime"]
+        cwd = self.front if name == "frontend" else self.api
+        require(runtime.get("component") == name and service["cwd"] == str(cwd)
+                and service["port"] == self.ports[name]
+                and all(runtime.get(key) == self.config[key] for key in ("sha", "checkout", "mount_id")),
+                f"El recibo de {name} acredita otro SHA, arranque o montaje.")
+        return service
+
     def verify_running(self):
         config, container = self.database()
         require(container["State"]["Running"] and self.receipt["services"].keys() == {"api", "frontend"},
@@ -288,8 +298,8 @@ class Mount:
         with self.phase("verificacion_datos"):
             self.profile(config)
         with self.phase("disponibilidad"):
-            for service in self.receipt["services"].values():
-                verify_service(service, config["origins"])
+            for name in ("api", "frontend"):
+                verify_service(self.registered_service(name), config["origins"])
             self.check_proxy()
         validate_config(self.config, unassigned_container=True)
 
@@ -374,7 +384,7 @@ class Mount:
             try:
                 with self.phase(f"parada_{name}"):
                     if name in self.receipt["services"]:
-                        stop_service(self.receipt["services"][name])
+                        stop_service(self.registered_service(name))
                     else:
                         self.ensure_free((name,))
             except ProfileError as exc:
