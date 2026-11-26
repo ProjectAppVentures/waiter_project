@@ -10,10 +10,17 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .qa_runtime import identity as qa_identity
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 DJANGO_ENV = os.getenv('DJANGO_ENV', 'development')
+WAITER_QA_IDENTITY = qa_identity(DJANGO_ENV, BASE_DIR.parent)
+if WAITER_QA_IDENTITY:
+    _qa_state = Path(os.environ['WAITER_QA_STATE_DIR'])
+    if not _qa_state.is_dir() or _qa_state.resolve() != _qa_state:
+        raise RuntimeError('El lanzador QA requiere un directorio de estado propio.')
 IS_PRODUCTION = DJANGO_ENV == 'production'
 # Staging: el servidor de pruebas del fleet, sólo por HTTPS. Seguro por defecto (sin DEBUG, secreto real, cookies
 # Secure, correo a archivo) y sin exigir las llaves de pago ni el SMTP de producción.
@@ -125,6 +132,9 @@ LOGGING = {
     'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'}},
     'root': {'handlers': ['console'], 'level': LOG_LEVEL},
 }
+if WAITER_QA_IDENTITY:
+    LOGGING['handlers']['sin_acceso'] = {'class': 'logging.NullHandler'}
+    LOGGING['loggers'] = {'django.server': {'handlers': ['sin_acceso'], 'propagate': False}}
 
 # ---------------------------------------------------------------------------
 # Bloque 3 — experiencia del comensal
@@ -183,8 +193,9 @@ PAYMENTS_PUBLIC_URL = os.getenv('PAYMENTS_PUBLIC_URL', '').rstrip('/')
 POS_URL = os.getenv('POS_URL', 'http://localhost:3000').rstrip('/')
 PLATFORM_URL = os.getenv('PLATFORM_URL', 'http://localhost:3000').rstrip('/')
 EMAIL_FROM = os.getenv('EMAIL_FROM', 'team@projectapp.co')
-WAITER_EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.filebased.EmailBackend')
-WAITER_EMAIL_FILE_PATH = BASE_DIR / 'mail'
+_file_email = 'django.core.mail.backends.filebased.EmailBackend'
+WAITER_EMAIL_BACKEND = _file_email if WAITER_QA_IDENTITY else os.getenv('EMAIL_BACKEND', _file_email)
+WAITER_EMAIL_FILE_PATH = (_qa_state if WAITER_QA_IDENTITY else BASE_DIR) / 'mail'
 MAILERS['waiter'] = {
     'BACKEND': WAITER_EMAIL_BACKEND,
     'OPTIONS': (
@@ -195,7 +206,7 @@ MAILERS['waiter'] = {
 }
 # Staging: el remitente 'default' (lo usa la recuperación de contraseña del comensal) sigue al de waiter, que escribe en
 # experience/mail salvo que EMAIL_BACKEND pida otro. Así ningún correo de staging sale por el SMTP sin pedirlo.
-if IS_STAGING:
+if IS_STAGING or WAITER_QA_IDENTITY:
     MAILERS['default'] = {'BACKEND': MAILERS['waiter']['BACKEND'], 'OPTIONS': dict(MAILERS['waiter']['OPTIONS'])}
 # Falla cerrado: en producción un correo que no sale del servidor (archivo, consola, memoria o nulo) se reportaría como
 # enviado y las invitaciones y los avisos de cobro no llegarían a nadie.
@@ -207,7 +218,7 @@ from corsheaders.defaults import default_headers
 CORS_ALLOW_HEADERS = (*default_headers, 'x-waiter-org')
 
 # Fotos propias del catálogo T1.
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = (_qa_state if WAITER_QA_IDENTITY else BASE_DIR) / 'media'
 
 # WhatsApp: las credenciales son opcionales para arrancar.
 WA_ACCESS_TOKEN = os.getenv('WA_ACCESS_TOKEN', '')

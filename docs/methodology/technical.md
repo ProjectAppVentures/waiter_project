@@ -60,3 +60,35 @@ la confirmación del corpus. El comando devuelve conflicto y preserva el montaje
 para su diagnóstico. También rechaza bases existentes sin manifiesto y
 discrepancias de pertenencia, versión o estado. Un acceso autorizado posterior
 puede dejar sesión, asistencia y pase sin cambiar el estado de caja cerrada.
+
+### Lanzador por copia
+
+En Linux, `scripts/dev.sh qa up --prepare --config <ruta>` crea el montaje
+propio de un perfil autorizado. El JSON usa el contrato anterior y admite
+`python` como ruta absoluta al intérprete con las dependencias instaladas.
+Por omisión usa `experience/venv/bin/python`. Next usa las dependencias de
+`frontend/`. El lanzador requiere una copia limpia reservada al SHA y
+un directorio privado por montaje. Next, API y MySQL se enlazan a loopback
+con tres puertos distintos. El mapa de orígenes registra la reserva pública.
+
+Para un montaje nuevo, `db.container_id` entra como `null`. El lanzador
+registra el ID Docker acreditado en `perfil-config.json` y usa esa copia de
+la configuración con el perfil. Un perfil ya preparado con ID explícito
+se comprueba con su manifiesto antes de registrar el MySQL como propio.
+Repetir `up --prepare` verifica sin migrar ni sembrar. `up` permite retomar
+el corpus preparado. `status` verifica sin arrancar recursos.
+
+`montaje-qa.json` registra la copia, rama, titular, orígenes, puertos,
+procesos, MySQL, volumen, directorios y tiempos. Las respuestas de identidad
+de Next en `/__waiter_qa/identity` y de Django en `/api/health/` corresponden
+a cada arranque. El lanzador cruza SHA, huella de ruta y arranque con los
+PID, tiempos de inicio y sockets. Verifica también el API a través de
+Next y el perfil sin login. La opción `NEXT_PUBLIC_WAITER_QA_CENTRAL_HOST`
+activa el central y los subdominios de organización, plataforma y menú
+en una sola app Next. La accesibilidad efectiva desde el equipo de QA
+se comprueba durante el montaje autorizado.
+
+`down` detiene los procesos acreditados y su MySQL, sin borrar volumen o
+corpus. El mismo recibo guarda la verificación de parada y los pendientes
+si queda un recurso sin acreditar. Las salidas de prueba se aíslan en el
+montaje. El arranque no hereda archivos de entorno del servicio.

@@ -48,6 +48,12 @@ describe('proxy: el host del menú es el comensal', () => {
 })
 
 describe('proxy: el dominio central y los hosts del POS', () => {
+  // Falla si el servidor ordinario publica la sonda QA aun con un host de aspecto válido.
+  it('mantiene la sonda QA fuera del enrutamiento ordinario', () => {
+    expect(decidir('qa-a.waiter.localhost:3117', '/__waiter_qa/identity', true)).toEqual({ tipo: 'no-encontrado' })
+    expect(decidir('menu.waiter.projectapp.co', '/__waiter_qa/identity')).toEqual({ tipo: 'no-encontrado' })
+  })
+
   // Falla si el dominio central deja de mostrar la landing en sus cuatro páginas o se la muestra al inicio de sesión.
   it.each(['/', '/privacy', '/privacy/', '/terms', '/data-deletion'])('el dominio central muestra la landing en %s', (ruta) => {
     expect(decidir('waiter.projectapp.co', ruta)).toEqual({ tipo: 'sitio', sitio: 'landing' })

@@ -11,3 +11,10 @@ M-01. Su entrada y su manifiesto están descritos en la guía técnica. La
 validación automática vive en la ronda de CI. WT-002 parte de la integración
 acreditada de WT-001 en `main`. La aceptación funcional sigue sujeta al encargo
 autorizado de QA.
+
+## WT-002 · 26 de noviembre de 2026
+
+El modo QA del lanzador consume el perfil de WT-001, acredita la identidad
+de Next y Django y limita arranque, reuso y parada al montaje propio. La
+ronda de CI comprueba el ciclo de vida con recursos desechables. El montaje
+de DevQA y la aceptación M-01 siguen reservados al encargo autorizado.

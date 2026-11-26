@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { isLocalHost, isPlatformHost, orgFromHost } from '@/lib/domain/tenant'
+import { isLocalHost, isPlatformHost, orgFromHost, qaCentralName, qaHost } from '@/lib/domain/tenant'
 import { SITIO, type Sitio } from '@/lib/sitio'
 
 // Waiter es una sola app de Next que sirve tres sitios según el host:
@@ -21,8 +24,27 @@ const INTERNO = /^\/(diner|landing)(\/|$)/
 // La consola de ProjectApp pasó de /plataforma a /platform el 17-10-2026: un enlace o un marcador viejo llega a la misma
 // pantalla en la ruta nueva, con su consulta. En el host del menú /plataforma sigue siendo del comensal.
 const CONSOLA_VIEJA = /^\/plataforma(?=\/|$)/
+const IDENTITY_PATH = '/__waiter_qa/identity'
+
+function readQaIdentity() {
+  if (!qaCentralName() || !process.env.WAITER_QA_RUNTIME) return null
+  try {
+    const { component, sha, checkout, mount_id, boot_id } = JSON.parse(process.env.WAITER_QA_RUNTIME)
+    if (component !== 'frontend' || checkout !== realpathSync(resolve(process.cwd(), '..'))
+      || typeof sha !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)
+      || typeof boot_id !== 'string' || !/^[a-f0-9]{32}$/.test(boot_id)
+      || typeof mount_id !== 'string' || mount_id.length > 32 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(mount_id)) return null
+    return { component, sha, mount_id, boot_id, checkout_digest: createHash('sha256').update(checkout).digest('hex') }
+  } catch {
+    return null
+  }
+}
+
+const qaIdentity = readQaIdentity()
 
 export const esHostDelMenu = (host: string): boolean => {
+  const qa = qaCentralName()
+  if (qa) return qaHost(host, qa)?.kind === 'menu'
   const labels = host.split(':')[0].toLowerCase().split('.')
   return labels.length >= 2 && labels[0] === 'menu'
 }
@@ -34,12 +56,17 @@ const esHostViejoDeLaConsola = (host: string): boolean => host.split(':')[0].toL
 
 // El dominio central con nombre: sin organización, sin la consola y sin el menú. Una IP o «localhost» a secas siguen
 // siendo del POS (el desarrollo y las tabletas de la LAN entran por ahí).
-export const esCentral = (host: string): boolean =>
-  !isLocalHost(host) && !orgFromHost(host) && !isPlatformHost(host) && !esHostDelMenu(host)
+export const esCentral = (host: string): boolean => {
+  const qa = qaCentralName()
+  if (qa) return qaHost(host, qa)?.kind === 'central'
+  return !isLocalHost(host) && !orgFromHost(host) && !isPlatformHost(host) && !esHostDelMenu(host)
+}
 
 export type Decision = { tipo: 'pasar' } | { tipo: 'no-encontrado' } | { tipo: 'sitio'; sitio: Sitio } | { tipo: 'redirigir'; ruta: string }
 
 export function decidir(host: string, pathname: string, desarrollo = false): Decision {
+  const qa = qaCentralName()
+  if (pathname === IDENTITY_PATH || (qa && !qaHost(host, qa))) return { tipo: 'no-encontrado' }
   // La galería del kit es una herramienta local: el servidor publicado no sirve esta ruta.
   if (!desarrollo && (pathname === '/kit' || pathname.startsWith('/kit/'))) return { tipo: 'no-encontrado' }
   if (INTERNO.test(pathname)) return { tipo: 'no-encontrado' }
@@ -56,7 +83,12 @@ export function decidir(host: string, pathname: string, desarrollo = false): Dec
 // Corre en todas las peticiones (sin matcher), también en /_next/static, para que ninguna llegue a las reescrituras de
 // next.config.ts con un SITIO puesto por el cliente.
 export function proxy(request: NextRequest) {
-  const decision = decidir(request.headers.get('host') ?? '', request.nextUrl.pathname, process.env.NODE_ENV === 'development')
+  const host = request.headers.get('host') ?? ''
+  const qa = qaCentralName()
+  if (qa && qaIdentity && request.method === 'GET' && request.nextUrl.pathname === IDENTITY_PATH && qaHost(host, qa)) {
+    return NextResponse.json(qaIdentity, { headers: { 'Cache-Control': 'no-store' } })
+  }
+  const decision = decidir(host, request.nextUrl.pathname, process.env.NODE_ENV === 'development')
   if (decision.tipo === 'no-encontrado') {
     return new NextResponse('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
   }
