@@ -26,6 +26,18 @@ def write_private(path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
+def config_https(config):
+    secure = deepcopy(config)
+    origins = secure["origins"]
+    for name in ("central", "platform", "menu"):
+        origins[name] = origins[name].replace("http://", "https://", 1)
+    origins["organizations"] = {
+        slug: origin.replace("http://", "https://", 1)
+        for slug, origin in origins["organizations"].items()
+    }
+    return secure
+
+
 def docker(*args, check=True):
     return subprocess.run(["docker", *args], check=check, capture_output=True, text=True, timeout=45).stdout.strip()
 
@@ -125,6 +137,19 @@ def test_identidad_de_django_solo_lee_el_registro_qa_de_desarrollo(monkeypatch):
     assert identity("development", ROOT.parent) is None
 
 
+def test_rechaza_https_antes_de_tocar_recursos(mount):
+    # Falla si HTTP acredita un mapa HTTPS o si el rechazo deja recursos o recibos nuevos.
+    write_private(mount.config_path, config_https(mount.config))
+    files_before = set(mount.directory.iterdir())
+    for args in (("up", "--prepare"), ("status",)):
+        execution = mount.invoke(*args)
+        assert execution.returncode == 2
+        assert "sólo sirve HTTP" in execution.stderr and "origen HTTPS" in execution.stderr
+        assert set(mount.directory.iterdir()) == files_before
+        assert not mount.resources()
+        assert mount.volume not in docker("volume", "ls", "--format", "{{.Name}}").splitlines()
+
+
 def test_arranque_reuso_conflicto_parada_y_retoma_propios(mount):
     # Falla si una copia se adopta por puerto, cambia de identidad durante el reuso o la parada pierde el corpus.
     result = mount.invoke("up")
@@ -215,4 +240,15 @@ def test_arranque_reuso_conflicto_parada_y_retoma_propios(mount):
     assert all(service["runtime"]["boot_id"] != created["services"][name]["runtime"]["boot_id"]
                for name, service in resumed["services"].items())
     assert mount.data_path.read_bytes() == data
+
+    # Un recibo previo con origen HTTPS aún debe permitir parar los recursos que acredita.
+    legacy_config = config_https(resumed["config"])
+    write_private(mount.config_path, legacy_config)
+    write_private(mount.receipt_path, {**resumed, "config": legacy_config})
+    legacy_receipt = mount.receipt_path.read_bytes()
+    execution = mount.invoke("status")
+    assert execution.returncode == 2 and "origen HTTPS" in execution.stderr
+    assert mount.receipt_path.read_bytes() == legacy_receipt
     assert mount.result("down", "detenido")["stop_issues"] == []
+    assert docker("inspect", "--format", "{{.State.Running}}", container) == "false"
+    assert mount.data_path.read_bytes() == data

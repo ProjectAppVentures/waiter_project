@@ -429,6 +429,9 @@ def main():
         require(not args.prepare or args.action == "up", "Sólo up admite --prepare.")
         raw = private_json(args.config)
         config = validate_config(raw, check_checkout=args.action != "down", unassigned_container=True)
+        if args.action in ("up", "status"):
+            require(urlsplit(config["origins"]["central"]).scheme == "http",
+                    "El lanzador QA local sólo sirve HTTP. Un origen HTTPS requiere terminación TLS.")
         python = Path(raw.get("python", str(ROOT / "experience/venv/bin/python")))
         require(python.is_absolute() and Path(os.path.abspath(python)) == python,
                 "Se requiere una ruta absoluta para el intérprete Python de la copia.")

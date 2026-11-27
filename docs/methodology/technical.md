@@ -70,6 +70,10 @@ Por omisión usa `experience/venv/bin/python`. Next usa las dependencias de
 `frontend/`. El lanzador requiere una copia limpia reservada al SHA y
 un directorio privado por montaje. Next, API y MySQL se enlazan a loopback
 con tres puertos distintos. El mapa de orígenes registra la reserva pública.
+Este lanzador local sirve HTTP. `up` y `status` rechazan un mapa HTTPS antes
+de tocar recursos o recibos. La terminación HTTPS requiere un alcance
+explícito. `down` permite detener recursos propios ya acreditados por un
+recibo anterior que declaró HTTPS.
 
 Para un montaje nuevo, `db.container_id` entra como `null`. El lanzador
 registra el ID Docker acreditado en `perfil-config.json` y usa esa copia de
