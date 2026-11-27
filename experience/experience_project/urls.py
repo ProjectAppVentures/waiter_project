@@ -7,11 +7,16 @@ from django.urls import include, path
 
 def health_check(request):
     # 'project' y 'environment' dejan verificar QUIÉN respondió (convención del fleet).
-    return JsonResponse({
+    info = {
         'status': 'ok',
         'project': settings.BASE_DIR.name,
         'environment': getattr(settings, 'DJANGO_ENV', os.getenv('DJANGO_ENV', 'development')),
-    })
+    }
+    identity = settings.WAITER_QA_IDENTITY
+    if identity:
+        info['qa'] = identity
+        return JsonResponse(info, headers={'Cache-Control': 'no-store'})
+    return JsonResponse(info)
 
 
 from whatsapp.views import webhook as whatsapp_webhook

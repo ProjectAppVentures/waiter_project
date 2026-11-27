@@ -15,6 +15,10 @@
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+if [[ ${1:-} == qa ]]; then
+  shift
+  exec python3 "$ROOT/scripts/calidad/lanzador_qa.py" "$@"
+fi
 if [[ -z ${HOST:-} ]]; then
   if ip -4 addr show 2>/dev/null | grep -q ' 192.168.56.10/'; then HOST=192.168.56.10
   else HOST=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}'); fi

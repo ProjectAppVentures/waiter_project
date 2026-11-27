@@ -1,5 +1,28 @@
 import { centralHost, destinationOrigin, isCentralHost, isLocalHost, isPlatformHost, orgFromHost } from '@/lib/domain/tenant'
 
+// Falla si la dupla se confunde con una organización o los pases cambian de host, esquema o puerto.
+it('resuelve el destino del pase en el montaje QA optativo', () => {
+  const qa = jest.replaceProperty(process, 'env', {
+    ...process.env, NODE_ENV: 'development', NEXT_PUBLIC_WAITER_QA_CENTRAL_HOST: 'qa-a.waiter.localhost',
+  })
+  try {
+    const central = 'qa-a.waiter.localhost:3117'
+    expect(orgFromHost(central, 'demo')).toBeNull()
+    expect(orgFromHost(`perfil-a.${central}`)).toBe('perfil-a')
+    expect(orgFromHost(`platform.${central}`, 'demo')).toBeNull()
+    expect(orgFromHost(`menu.${central}`, 'demo')).toBeNull()
+    expect(isPlatformHost(`platform.${central}`)).toBe(true)
+    expect(isPlatformHost('platform.qa-b.waiter.localhost:3117')).toBe(false)
+    expect(centralHost(`perfil-a.${central}`)).toBe(central)
+    expect(centralHost(`platform.${central}`)).toBe(central)
+    expect(centralHost(`menu.${central}`)).toBe(central)
+    expect(destinationOrigin('pos', 'perfil-b', { protocol: 'https:', host: central })).toBe(`https://perfil-b.${central}`)
+    expect(destinationOrigin('platform', null, { protocol: 'http:', host: central })).toBe(`http://platform.${central}`)
+  } finally {
+    qa.restore()
+  }
+})
+
 // Falla si el subdominio no se lee como la organización, si un nombre reservado (el de la consola, `platform`, o su
 // nombre viejo, `plataforma`) o el dominio base se toman por una, si una IP o localhost a secas no caen en la
 // organización por omisión (plan T), o si la consola deja de reconocerse en `platform.` o se sigue reconociendo en

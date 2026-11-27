@@ -78,6 +78,37 @@ jobs:
       - name: Copia nueva, reuso y destinos incompatibles
         run: python -m pytest -q -p no:django scripts/calidad/tests/test_seed_perfil_qa.py
 
+  montaje-qa:
+    name: QA · Montaje aislado, identidad y parada propia
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: experience/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.20.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Dependencias del API
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-libmysqlclient-dev pkg-config
+          python -m pip install -r experience/requirements.txt
+      - name: Dependencias de la app única
+        working-directory: frontend
+        run: |
+          npm install --global npm@11.19.0
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Identidad y ciclo de vida del montaje QA
+        run: python -m pytest -q -p no:django scripts/calidad/tests/test_lanzador_qa.py
+
   pos:
     name: Frontend · tipos, pruebas y calidad
     runs-on: ubuntu-24.04

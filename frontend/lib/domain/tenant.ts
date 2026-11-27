@@ -7,7 +7,26 @@ const PLATFORM_SUBDOMAIN = 'platform'
 export const RESERVED_SUBDOMAINS = [PLATFORM_SUBDOMAIN, 'plataforma', 'www', 'api', 'menu', 'admin', 'app'] as const
 export const ORG_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+export function qaCentralName(): string | null {
+  const name = process.env.NEXT_PUBLIC_WAITER_QA_CENTRAL_HOST
+  return process.env.NODE_ENV === 'development' && name && /^qa-[a-z0-9]+\.waiter\.localhost$/.test(name) ? name : null
+}
+
+export function qaHost(host: string, central: string): { kind: 'central' | 'platform' | 'menu' } | { kind: 'org'; slug: string } | null {
+  const name = host.split(':')[0].toLowerCase()
+  if (name === central) return { kind: 'central' }
+  if (!name.endsWith(`.${central}`)) return null
+  const label = name.slice(0, -(central.length + 1))
+  if (label === 'platform' || label === 'menu') return { kind: label }
+  return ORG_SLUG.test(label) && !(RESERVED_SUBDOMAINS as readonly string[]).includes(label) ? { kind: 'org', slug: label } : null
+}
+
 export function orgFromHost(host: string, fallback: string | null = null): string | null {
+  const qa = qaCentralName()
+  if (qa) {
+    const mount = qaHost(host, qa)
+    return mount?.kind === 'org' ? mount.slug : null
+  }
   const name = host.split(':')[0].toLowerCase()
   const labels = name.split('.')
   // Una IP o «localhost» a secas no llevan organización.
@@ -19,7 +38,11 @@ export function orgFromHost(host: string, fallback: string | null = null): strin
   return first
 }
 
-export const isPlatformHost = (host: string): boolean => host.split(':')[0].toLowerCase().startsWith(`${PLATFORM_SUBDOMAIN}.`)
+export const isPlatformHost = (host: string): boolean => {
+  const qa = qaCentralName()
+  if (qa) return qaHost(host, qa)?.kind === 'platform'
+  return host.split(':')[0].toLowerCase().startsWith(`${PLATFORM_SUBDOMAIN}.`)
+}
 
 // La organización de este navegador: el subdominio o, en desarrollo, la que fija NEXT_PUBLIC_DEFAULT_ORG.
 export function currentOrg(): string | null {
@@ -34,6 +57,11 @@ const IP = /^\d+(\.\d+){3}$/
 export const isLocalHost = (host: string): boolean => { const name = host.split(':')[0].toLowerCase(); return name === 'localhost' || IP.test(name) }
 // La dirección del inicio universal vista desde cualquier otra: sin el subdominio de la organización ni el de la consola.
 export function centralHost(host: string): string {
+  const qa = qaCentralName()
+  if (qa) {
+    const port = host.split(':')[1]
+    return qaHost(host, qa) ? (port ? `${qa}:${port}` : qa) : host
+  }
   return orgFromHost(host) || isPlatformHost(host) ? host.slice(host.indexOf('.') + 1) : host
 }
 export const isCentralHost = (host: string): boolean => centralHost(host) === host
@@ -42,6 +70,12 @@ export const isCentralHost = (host: string): boolean => centralHost(host) === ho
 // por omisión y la consola viven en la misma dirección; las demás organizaciones, en `<org>.localhost`.
 export function destinationOrigin(kind: 'pos' | 'platform', slug: string | null, here: { protocol: string; host: string }, defaultOrg: string | null = null): string {
   const central = centralHost(here.host)
+  const qa = qaCentralName()
+  if (qa) {
+    if (kind === 'platform') return `${here.protocol}//platform.${central}`
+    const tenant = slug ? qaHost(`${slug}.${central}`, qa) : null
+    return `${here.protocol}//${tenant?.kind === 'org' ? `${tenant.slug}.` : ''}${central}`
+  }
   if (isLocalHost(central) && (kind === 'platform' || slug === defaultOrg)) return `${here.protocol}//${central}`
   const [name, port] = central.split(':')
   const base = IP.test(name) ? `localhost${port ? `:${port}` : ''}` : central

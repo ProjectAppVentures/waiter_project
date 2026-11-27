@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next'
 
+import { qaCentralName } from './lib/domain/tenant'
 import { SITIO, SITIOS } from './lib/sitio'
 
 // Waiter es una sola app: el POS, el comensal (menu.*) y la landing comparten este servidor y proxy.ts los reparte por
@@ -11,6 +12,7 @@ const experienceOrigin = (process.env.EXPERIENCE_ORIGIN
 
 // La IP de desarrollo que exporta scripts/dev.sh (la red host-only de la VM, si no se indica otra).
 const devHost = process.env.WAITER_HOST || '192.168.56.10'
+const qaCentral = qaCentralName()
 
 const nextConfig: NextConfig = {
   // Django exige la barra final en la API (APPEND_SLASH): sin redirecciones de Next, cada ruta llega tal cual, con y sin
@@ -28,7 +30,10 @@ const nextConfig: NextConfig = {
   // responde 403 a sus propios chunks cuando el origen no coincide con el que escucha.
   // Plan T: cada organización entra por su subdominio (`frisby.localhost:3000`) y el comensal por `menu.localhost:3000`;
   // desde la red, el comensal y la landing por menu.<IP>.nip.io y www.<IP>.nip.io (scripts/dev.sh).
-  allowedDevOrigins: [devHost, `*.${devHost}.nip.io`, 'localhost', '*.localhost', '127.0.0.1'],
+  allowedDevOrigins: qaCentral
+    ? [qaCentral, `*.${qaCentral}`]
+    : [devHost, `*.${devHost}.nip.io`, 'localhost', '*.localhost', '127.0.0.1'],
+  ...(qaCentral ? { logging: { incomingRequests: false } } : {}),
   devIndicators: false,
   images: { unoptimized: true },
   async rewrites() {

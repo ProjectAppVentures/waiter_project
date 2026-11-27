@@ -63,9 +63,9 @@ def private_json(path, *, missing_ok=False):
     return data
 
 
-def capture(command):
+def capture(command, *, env=None, timeout=15):
     try:
-        return subprocess.run(command, check=True, capture_output=True, text=True, timeout=15).stdout
+        return subprocess.run(command, check=True, capture_output=True, text=True, env=env, timeout=timeout).stdout
     except (subprocess.SubprocessError, OSError):
         raise ProfileError(f"No se pudo verificar la identidad mediante {command[0]}.") from None
 
@@ -99,7 +99,10 @@ def validate_origins(origins, namespace):
 
 
 def load_config(path):
-    raw = private_json(path)
+    return validate_config(private_json(path))
+
+
+def validate_config(raw, *, check_checkout=True, unassigned_container=False):
     require(
         type(raw.get("version")) is int and raw["version"] == 1
         and raw.get("profile") == PROFILE
@@ -115,13 +118,15 @@ def load_config(path):
     require(matches(mount, SLUG, 32) and matches(namespace, SLUG, 24), "Montaje o namespace inválido.")
     require(isinstance(raw.get("owner"), str) and raw["owner"].strip(), "Falta el titular del montaje.")
     require(raw.get("checkout") == str(ROOT), "El lanzador del perfil no pertenece al checkout acreditado.")
-    git = ["git", "--no-optional-locks", "-C", str(ROOT)]
-    head = capture([*git, "rev-parse", "HEAD"]).strip()
-    require(raw.get("sha") == head, "El SHA del perfil difiere del checkout.")
-    require(
-        not capture([*git, "status", "--porcelain", "--untracked-files=no"]),
-        "El checkout del perfil tiene cambios en archivos versionados.",
-    )
+    require(matches(raw.get("sha"), r"(?:[a-f0-9]{40}|[a-f0-9]{64})", 64), "Se requiere un SHA válido.")
+    if check_checkout:
+        git = ["git", "--no-optional-locks", "-C", str(ROOT)]
+        head = capture([*git, "rev-parse", "HEAD"]).strip()
+        require(raw["sha"] == head, "El SHA del perfil difiere del checkout.")
+        require(
+            not capture([*git, "status", "--porcelain", "--untracked-files=no"]),
+            "El checkout del perfil tiene cambios en archivos versionados.",
+        )
     try:
         state_dir = private_path(raw["state_dir"])
         credentials = private_path(raw["credentials_ref"])
@@ -135,7 +140,8 @@ def load_config(path):
         and db["host"] == "127.0.0.1" and db["source"] == SOURCE_DB
         and db["name"] == "test_waiter_qa_" + mount.replace("-", "_")
         and type(db["port"]) is int and 1 <= db["port"] <= 65535
-        and matches(db["container_id"], r"[a-f0-9]{64}", 64)
+        and (matches(db["container_id"], r"[a-f0-9]{64}", 64)
+             or (unassigned_container and db["container_id"] is None))
         and matches(db["volume"], r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", 100)
         and matches(db["user"], r"[a-zA-Z0-9_]+", 32),
         "Se requiere MySQL por loopback con origen y destino de prueba explícitos y recursos identificados.",
@@ -177,16 +183,20 @@ def publish(path, data, directory_fd):
             temporary.unlink(missing_ok=True)
 
 
-def inspect_mysql(config):
-    db = config["db"]
+def docker_command():
     socket = os.getenv("DOCKER_HOST") or "unix:///var/run/docker.sock"
     require(socket.startswith("unix:///"), "Se requiere un socket Docker local.")
-    docker = ["docker", "--host", socket]
+    return ["docker", "--host", socket]
+
+
+def mysql_container(config):
+    db = config["db"]
+    docker = docker_command()
     container, = json.loads(capture([*docker, "inspect", "--type", "container", db["container_id"]]))
     volume, = json.loads(capture([*docker, "volume", "inspect", db["volume"]]))
     mount_id = config["mount_id"]
     require(
-        container["Id"] == db["container_id"] and container["State"]["Running"]
+        container["Id"] == db["container_id"]
         and (container["Config"]["Labels"] or {}).get(MOUNT_LABEL) == mount_id
         and volume["Name"] == db["volume"] and volume["Driver"] == "local"
         and (volume["Labels"] or {}).get(MOUNT_LABEL) == mount_id,
@@ -198,8 +208,14 @@ def inspect_mysql(config):
         and mounts[0]["Source"] == volume["Mountpoint"] and mounts[0]["RW"],
         "La ruta de datos MySQL no usa el volumen acreditado.",
     )
+    return container, volume
+
+
+def inspect_mysql(config):
+    db = config["db"]
+    container, volume = mysql_container(config)
     binding = [{"HostIp": db["host"], "HostPort": str(db["port"])}]
-    require(container["NetworkSettings"]["Ports"].get("3306/tcp") == binding,
+    require(container["State"]["Running"] and container["NetworkSettings"]["Ports"].get("3306/tcp") == binding,
             "MySQL no escucha exclusivamente en el puerto local acreditado.")
     return {"container_id": container["Id"], "volume": volume["Name"], "volume_created_at": volume["CreatedAt"]}
 
